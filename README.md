@@ -2,7 +2,7 @@
 SapphireSpamCleanse is a luxurious and high-quality MediaWiki extension that elegantly and thoroughly removes spam, leaving no trace in logs, page histories, or change lists, ensuring a pristine and spam-free environment
 
 # Requirements
-* PHP 7.4 or newer
+* PHP 8.1 or newer
 * MediaWiki 1.39 or newer
 * SmiteSpam extension
 * UserMerge extension
@@ -41,7 +41,7 @@ source of comfort. When I'm not in a pool, the survival games keep my interest. 
 the water the games test my abilities, resiliency and
 [https://example.com/spam/123456789012345678901234567890123456789012345678901234567890123456789012345678901 game]
 perseverance.&lt;br>&lt;br>Feel free to visit my blog [https://example.com/spam/1234567890123456789
-                                                 
+
 [p]urge (default) or [t]rust:
 
 <b>ChristenaRuatoka &lt;joeanncelina@example.com> created [[User talk:ChristenaRuatoka]]</b>

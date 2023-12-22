@@ -47,7 +47,7 @@ class Cleanse extends Maintenance {
 		$this->addOption( 'simulate', 'Do not execute any actions' );
 	}
 
-	public function execute() {
+	public function execute(): void {
 		$services = MediaWikiServices::getInstance();
 		$this->actorNormalization = $services->getActorNormalization();
 		$this->deletePageFactory = $services->getDeletePageFactory();
@@ -79,18 +79,24 @@ class Cleanse extends Maintenance {
 
 	private function removeUser( UserIdentity $target, UserIdentity $admin ): void {
 		$db = $this->loadBalancer->getConnection( DB_REPLICA );
-
-		$queryInfo = $this->revisionStore->getQueryInfo();
 		$actorId = $this->actorNormalization->findActorId( $target, $db );
 
-		$res =
-			$db->newSelectQueryBuilder()
+		if ( method_exists( $this->revisionStore, 'newSelectQueryBuilder' ) ) {
+			$res = $this->revisionStore->newSelectQueryBuilder( $db )
+				->where( [ 'rev_actor' => $actorId ] )
+				->groupBy( 'rev_page' )
+				->caller( __METHOD__ )
+				->fetchResultSet();
+		} else {
+			$queryInfo = $this->revisionStore->getQueryInfo();
+			$res = $db->newSelectQueryBuilder()
 				->fields( $queryInfo['fields'] )
 				->tables( $queryInfo['tables'] )
 				->where( [ 'rev_actor' => $actorId ] )
 				->groupBy( 'rev_page' )
 				->caller( __METHOD__ )
 				->fetchResultSet();
+		}
 
 		$pages = [];
 		echo "Found these pages by the user {$target->getName()}:\n";
