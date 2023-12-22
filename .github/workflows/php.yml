@@ -2,9 +2,9 @@ name: PHP Composer
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Cache vendor
       id: composer-cache
@@ -26,10 +26,10 @@ jobs:
     - name: Install dependencies
       uses: php-actions/composer@v6
       with:
-        php_version: 7.4
+        php_version: 8.1
 
     - name: Run tests
       uses: php-actions/composer@v6
       with:
-        php_version: 7.4
-        command: run-script test
+        php_version: 8.1
+        command: test
