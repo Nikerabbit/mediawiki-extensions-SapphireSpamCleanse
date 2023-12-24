@@ -47,7 +47,7 @@ class Cleanse extends Maintenance {
 		$this->addOption( 'simulate', 'Do not execute any actions' );
 	}
 
-	public function execute(): void {
+	private function initializeServices(): void {
 		$services = MediaWikiServices::getInstance();
 		$this->actorNormalization = $services->getActorNormalization();
 		$this->deletePageFactory = $services->getDeletePageFactory();
@@ -57,6 +57,10 @@ class Cleanse extends Maintenance {
 		$this->userFactory = $services->getUserFactory();
 		$this->userIdentityLookup = $services->getUserIdentityLookup();
 		$this->wikiPageFactory = $services->getWikiPageFactory();
+	}
+
+	public function execute(): void {
+		$this->initializeServices();
 
 		$admin = $this->userIdentityLookup->getUserIdentityByUserId( 1 );
 		$this->simulate = $this->hasOption( 'simulate' );

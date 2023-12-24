@@ -1,18 +1,26 @@
 # SapphireSpamCleanse
-SapphireSpamCleanse is a luxurious and high-quality MediaWiki extension that elegantly and thoroughly removes spam, leaving no trace in logs, page histories, or change lists, ensuring a pristine and spam-free environment
 
-# Requirements
-* PHP 8.1 or newer
-* MediaWiki 1.39 or newer
-* SmiteSpam extension
-* UserMerge extension
+SapphireSpamCleanse is a luxurious and high-quality MediaWiki extension. It elegantly and thoroughly removes spam,
+leaving no trace in logs, page histories, or change lists. This ensures a pristine and spam-free environment.
 
-# Installation
-Use your favorite way to get extensions and put `wfLoadExtension( 'SapphireSpamCleanse' )` in your `LocalSettings.php`.
+## Requirements
 
-# Usage
+For SapphireSpamCleanse, the following prerequisites are required:
 
-The idea is that you can just press ``enter`` for everything that is spam. If something isn't spam, you can type ``t`` or ``trust``
+- PHP 8.1 or newer
+- MediaWiki 1.39 or newer
+- SmiteSpam extension
+- UserMerge extension
+
+## Installation
+
+For installing SapphireSpamCleanse, use your favorite way to get extensions. Once done,
+add `wfLoadExtension( 'SapphireSpamCleanse' )` into your `LocalSettings.php`.
+
+## Usage
+
+The usage of SapphireSpamCleanse is simple. For removing spam, simply press `enter`. In case a piece is not spam, you
+can type `t` or `trust`.
 
 Example run:
 
