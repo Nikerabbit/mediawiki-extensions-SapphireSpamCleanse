@@ -139,7 +139,7 @@ class Cleanse extends Maintenance {
 		$this->cleanupRecentChanges( $admin, $ts );
 	}
 
-	private function cleanupRecentChanges( UserIdentity $user, string $ts = null ): void {
+	private function cleanupRecentChanges( UserIdentity $user, ?string $ts = null ): void {
 		$dbw = $this->loadBalancer->getConnection( DB_PRIMARY );
 		$conds = [];
 		$conds['rc_actor'] = $this->actorNormalization->findActorId( $user, $dbw );
