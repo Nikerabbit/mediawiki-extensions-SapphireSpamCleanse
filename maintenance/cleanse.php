@@ -3,6 +3,7 @@
 namespace SapphireSpamCleanse;
 
 use Maintenance;
+use MediaWiki\Block\DatabaseBlockStore;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Page\DeletePageFactory;
 use MediaWiki\Page\WikiPageFactory;
@@ -35,6 +36,7 @@ class Cleanse extends Maintenance {
 	private UserFactory $userFactory;
 	private UserIdentityLookup $userIdentityLookup;
 	private WikiPageFactory $wikiPageFactory;
+	private DatabaseBlockStore $databaseBlockStore;
 	private bool $simulate;
 
 	public function __construct() {
@@ -57,6 +59,7 @@ class Cleanse extends Maintenance {
 		$this->userFactory = $services->getUserFactory();
 		$this->userIdentityLookup = $services->getUserIdentityLookup();
 		$this->wikiPageFactory = $services->getWikiPageFactory();
+		$this->databaseBlockStore = $services->getDatabaseBlockStore();
 	}
 
 	public function execute(): void {
@@ -163,7 +166,7 @@ class Cleanse extends Maintenance {
 		$admin = $this->userFactory->newFromUserIdentity( $adminIdentity );
 
 		$l = new UserMergeLogger();
-		$o = new MergeUser( $user, $user, $l );
+		$o = new MergeUser( $user, $user, $l, $this->databaseBlockStore );
 		if ( !$this->simulate ) {
 			$o->delete( $admin, 'wfMessage' );
 		}
