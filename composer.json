@@ -22,7 +22,7 @@
 		"ext-readline": "*"
 	},
 	"require-dev": {
-		"mediawiki/mediawiki-codesniffer": "v46.0.0",
+		"mediawiki/mediawiki-codesniffer": "v47.0.0",
 		"php-parallel-lint/php-parallel-lint": "v1.4.0"
 	},
 	"scripts": {
