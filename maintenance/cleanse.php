@@ -213,7 +213,7 @@ class Cleanse extends Maintenance {
 				$pageName = $page->getTitle()->getPrefixedText();
 				echo "\e[1m$userName <$email> created [[$pageName]]\e[0m\n";
 				$text = $page->getContent()->getNativeData();
-				$text = mb_substr( $text, 0, 500 );
+				$text = mb_substr( (string)$text, 0, 500 );
 				$text = wordwrap( $text, 120, "\n", true );
 				echo $text . "\n";
 			}
@@ -356,7 +356,7 @@ class Cleanse extends Maintenance {
 
 		$userMap = [];
 		foreach ( $users as $user ) {
-			$sortKey = strrev( $user->getEmail() ) . $user->getName();
+			$sortKey = strrev( (string)$user->getEmail() ) . $user->getName();
 			$userMap[$sortKey] = $user;
 		}
 
