@@ -35,8 +35,8 @@ jobs:
       uses: actions/cache@v5
       with:
         path: vendor
-        key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
-        restore-keys: ${{ runner.os }}-php-
+        key: ${{ runner.os }}-build-php${{ matrix.php_version }}-${{ hashFiles('**/composer.lock') }}
+        restore-keys: ${{ runner.os }}-build-php${{ matrix.php_version }}-
 
     - name: Install dependencies
       run: composer install --prefer-dist --no-progress
@@ -59,8 +59,8 @@ jobs:
       uses: actions/cache@v5
       with:
         path: vendor
-        key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
-        restore-keys: ${{ runner.os }}-php-
+        key: ${{ runner.os }}-rector-php8.4-${{ hashFiles('**/composer.lock') }}
+        restore-keys: ${{ runner.os }}-rector-php8.4-
 
     - name: Install dependencies
       run: composer install --prefer-dist --no-progress
