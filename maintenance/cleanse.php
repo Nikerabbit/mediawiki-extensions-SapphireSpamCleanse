@@ -73,7 +73,7 @@ class Cleanse extends Maintenance {
 				$this->userIdentityLookup->getUserIdentityByName(
 					$this->getOption( 'remove-user' )
 				);
-			if ( !$target->isRegistered() ) {
+			if ( $target === null || !$target->isRegistered() ) {
 				$this->fatalError( 'Given user account does not exist' );
 			}
 			$this->removeUser( $target, $admin );
