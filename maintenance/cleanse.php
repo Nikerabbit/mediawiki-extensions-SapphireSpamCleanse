@@ -196,7 +196,7 @@ class Cleanse extends Maintenance {
 			$logId = $candidate['log_id'];
 			$smallestSeenLogId = $smallestSeenLogId === null ? $logId : min( $smallestSeenLogId, $logId );
 
-			echo "\\e[1m$userName <$email>\\e[0m\n";
+			echo "\e[1m$userName <$email>\e[0m\n";
 			echo "newusers log_id: $logId\n";
 
 			if ( $pages === [] ) {
@@ -318,7 +318,7 @@ class Cleanse extends Maintenance {
 
 	private function printPagePreview( string $userName, string $email, WikiPage $page ): void {
 		$pageName = $page->getTitle()->getPrefixedText();
-		echo "\\e[1m$userName <$email> edited [[$pageName]]\\e[0m\n";
+		echo "\033[1m$userName <$email> edited [[$pageName]]\033[0m\n";
 
 		$text = '';
 		$content = $page->getContent();
