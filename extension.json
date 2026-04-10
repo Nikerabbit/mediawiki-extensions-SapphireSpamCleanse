@@ -1,6 +1,6 @@
 {
 	"name": "SapphireSpamCleanse",
-	"version": "1.1.0",
+	"version": "2.0.0",
 	"author": [
 		"Niklas Laxström"
 	],
@@ -9,11 +9,21 @@
 	"license-name": "GPL-2.0-or-later",
 	"type": "antispam",
 	"requires": {
-		"MediaWiki": ">= 1.39.0",
+		"MediaWiki": ">= 1.43.0",
 		"extensions": {
-			"SmiteSpam": "*",
 			"UserMerge": "*"
 		}
+	},
+	"HookHandlers": {
+		"main": {
+			"class": "SapphireSpamCleanse\\Hooks"
+		}
+	},
+	"Hooks": {
+		"LoadExtensionSchemaUpdates": "main"
+	},
+	"AutoloadClasses": {
+		"SapphireSpamCleanse\\Hooks": "src/Hooks.php"
 	},
 	"AutoloadNamespaces": {
 		"SapphireSpamCleanse\\": "maintenance/"

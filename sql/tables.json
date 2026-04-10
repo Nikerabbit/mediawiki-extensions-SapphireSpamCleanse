@@ -1,0 +1,33 @@
+[
+	{
+		"name": "sapphirespamcleanse_trusted_user",
+		"columns": [
+			{
+				"name": "trusted_user_id",
+				"comment": "User ids of trusted users",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			},
+			{
+				"name": "trusted_user_timestamp",
+				"comment": "Timestamp of when a user was marked as trusted",
+				"type": "binary",
+				"options": { "notnull": true, "length": 14, "default": "" }
+			},
+			{
+				"name": "trusted_user_admin_id",
+				"comment": "User ID of admin who marked a user as trusted",
+				"type": "integer",
+				"options": { "notnull": true, "unsigned": true }
+			}
+		],
+		"indexes": [
+			{
+				"name": "trusted_user_id",
+				"columns": [ "trusted_user_id" ],
+				"unique": true
+			}
+		]
+	}
+]
+
