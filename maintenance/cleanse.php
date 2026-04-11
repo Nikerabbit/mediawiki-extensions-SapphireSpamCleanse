@@ -99,7 +99,10 @@ class Cleanse extends Maintenance {
 		$actorId = $this->actorNormalization->findActorId( $target, $db );
 
 		$res = $this->revisionStore->newSelectQueryBuilder( $db )
-			->where( [ 'rev_actor' => $actorId ] )
+			->where( [
+				'rev_actor' => $actorId,
+				'rev_parent_id' => 0,
+			] )
 			->groupBy( 'rev_page' )
 			->caller( __METHOD__ )
 			->fetchResultSet();
@@ -195,11 +198,12 @@ class Cleanse extends Maintenance {
 			$userName = $user->getName();
 			$email = $user->getEmail();
 			$logId = $candidate['log_id'];
-			$smallestSeenLogId = $smallestSeenLogId === null ? $logId : min( $smallestSeenLogId, $logId );
 
 			if ( $previewPages === [] ) {
 				continue;
 			}
+
+			$smallestSeenLogId = $smallestSeenLogId === null ? $logId : min( $smallestSeenLogId, $logId );
 
 			echo "\e[1m$userName <$email>\e[0m\n";
 			echo "newusers log_id: $logId\n";
@@ -244,7 +248,7 @@ class Cleanse extends Maintenance {
 		$qb = DatabaseLogEntry::newSelectQueryBuilder( $db )
 			->where( [
 				'log_type' => 'newusers',
-				'log_action' => [ 'create', 'create2' ],
+				'log_action' => 'create',
 				'log_namespace' => NS_USER,
 			] )
 			->leftJoin( 'sapphirespamcleanse_trusted_user', 't', 't.trusted_user_id = user_id' )
@@ -292,7 +296,10 @@ class Cleanse extends Maintenance {
 		}
 
 		$res = $this->revisionStore->newSelectQueryBuilder( $db )
-			->where( [ 'rev_actor' => $actorId ] )
+			->where( [
+				'rev_actor' => $actorId,
+				'rev_parent_id' => 0,
+			] )
 			->groupBy( 'rev_page' )
 			->caller( __METHOD__ )
 			->fetchResultSet();
