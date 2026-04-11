@@ -244,18 +244,14 @@ class Cleanse extends Maintenance {
 			->where( [
 				'log_type' => 'newusers',
 			] )
-			->join( 'user', 'u', 'u.user_name = log_title' )
-			->leftJoin( 'sapphirespamcleanse_trusted_user', 't', 't.trusted_user_id = u.user_id' )
+			->leftJoin( 'sapphirespamcleanse_trusted_user', 't', 't.trusted_user_id = user_id' )
 			->where( 't.trusted_user_id IS NULL' );
 
 		if ( $this->beforeLogId !== null ) {
 			$qb->andWhere( 'log_id < ' . $this->beforeLogId );
 		}
 
-		$res = $qb->select( [
-				'log_id',
-				'user_id' => 'u.user_id',
-			] )
+		$res = $qb
 			->orderBy( 'log_id', 'DESC' )
 			->limit( $this->maxUsers * 5 )
 			->caller( __METHOD__ )
