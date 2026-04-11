@@ -196,12 +196,12 @@ class Cleanse extends Maintenance {
 			$logId = $candidate['log_id'];
 			$smallestSeenLogId = $smallestSeenLogId === null ? $logId : min( $smallestSeenLogId, $logId );
 
+			if ( $previewPages === [] ) {
+				continue;
+			}
+
 			echo "\e[1m$userName <$email>\e[0m\n";
 			echo "newusers log_id: $logId\n";
-
-			if ( $previewPages === [] ) {
-				echo "No recent RC pages by this user\n";
-			}
 
 			foreach ( $previewPages as $page ) {
 				$this->printPagePreview( $userName, $email, $page );
