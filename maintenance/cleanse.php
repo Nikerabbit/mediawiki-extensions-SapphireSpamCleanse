@@ -190,7 +190,7 @@ class Cleanse extends Maintenance {
 		$smallestSeenLogId = null;
 		foreach ( $candidates as $candidate ) {
 			$user = $candidate['user'];
-			$pages = $this->getRecentPagesForUser( $user, $this->pagesPerUser );
+			$previewPages = $this->getRecentPagesForUser( $user, $this->pagesPerUser );
 			$userName = $user->getName();
 			$email = $user->getEmail();
 			$logId = $candidate['log_id'];
@@ -199,11 +199,11 @@ class Cleanse extends Maintenance {
 			echo "\e[1m$userName <$email>\e[0m\n";
 			echo "newusers log_id: $logId\n";
 
-			if ( $pages === [] ) {
+			if ( $previewPages === [] ) {
 				echo "No recent RC pages by this user\n";
 			}
 
-			foreach ( $pages as $page ) {
+			foreach ( $previewPages as $page ) {
 				$this->printPagePreview( $userName, $email, $page );
 			}
 
@@ -214,7 +214,7 @@ class Cleanse extends Maintenance {
 					case '':
 					case 'p':
 					case 'purge':
-						$this->deletePages( $pages, $admin );
+						$this->deletePages( $this->getAllPagesForUser( $user ), $admin );
 						$this->deleteUser( $user, $admin );
 						echo "\n";
 						break 2;
@@ -278,6 +278,28 @@ class Cleanse extends Maintenance {
 	}
 
 	/** @return WikiPage[] */
+	private function getAllPagesForUser( UserIdentity $user ): array {
+		$db = $this->connectionProvider->getReplicaDatabase();
+		$actorId = $this->actorNormalization->findActorId( $user, $db );
+		if ( !$actorId ) {
+			return [];
+		}
+
+		$res = $this->revisionStore->newSelectQueryBuilder( $db )
+			->where( [ 'rev_actor' => $actorId ] )
+			->groupBy( 'rev_page' )
+			->caller( __METHOD__ )
+			->fetchResultSet();
+
+		$pages = [];
+		foreach ( $res as $row ) {
+			$pages[] = $this->wikiPageFactory->newFromID( $row->rev_page );
+		}
+
+		return $pages;
+	}
+
+	/** @return WikiPage[] */
 	private function getRecentPagesForUser( UserIdentity $user, int $limit ): array {
 		$db = $this->connectionProvider->getReplicaDatabase();
 		$actorId = $this->actorNormalization->findActorId( $user, $db );
@@ -331,9 +353,22 @@ class Cleanse extends Maintenance {
 			return;
 		}
 
+		$text = $this->sanitizeTerminalOutput( $text );
 		$text = mb_substr( $text, 0, 500 );
 		$text = wordwrap( $text, 120, "\n", true );
 		echo $text . "\n";
+	}
+
+	private function sanitizeTerminalOutput( string $text ): string {
+		// Strip ANSI CSI sequences: ESC [ ... final_byte
+		$text = preg_replace( '/\x1b\[[0-9;]*[A-Za-z]/', '', $text );
+		// Strip OSC sequences: ESC ] ... ST (BEL or ESC \)
+		$text = preg_replace( '/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)/', '', $text );
+		// Strip remaining ESC sequences
+		$text = preg_replace( '/\x1b[^\x1b]/', '', $text );
+		// Strip control characters except newline (\n) and tab (\t)
+		$text = preg_replace( '/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', $text );
+		return $text;
 	}
 
 	private function trustUser( UserIdentity $user, UserIdentity $admin ): void {
@@ -350,7 +385,7 @@ class Cleanse extends Maintenance {
 	}
 
 	private function cleanUsers( UserIdentity $admin ): void {
-		$db = $this->connectionProvider->getReplicaDatabase();
+		$db = $this->connectionProvider->getPrimaryDatabase();
 
 		$res = $db->newSelectQueryBuilder()
 			->from( 'user', 'u' )
@@ -404,6 +439,7 @@ class Cleanse extends Maintenance {
 							$this->trustUser( $users[$response], $admin );
 							$userName = $users[$response]->getName();
 							echo "Trusted user $userName\n";
+							unset( $users[$response] );
 						}
 					}
 
