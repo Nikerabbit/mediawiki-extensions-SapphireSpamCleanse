@@ -7,6 +7,7 @@ use Rector\Config\RectorConfig;
 return RectorConfig::configure()
 	->withPaths( [
 		__DIR__ . '/maintenance',
+		__DIR__ . '/src',
 	] )
 	->withPhpSets()
 	->withPreparedSets(

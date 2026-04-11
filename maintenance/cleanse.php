@@ -9,6 +9,7 @@ use MediaWiki\MediaWikiServices;
 use MediaWiki\Page\DeletePageFactory;
 use MediaWiki\Page\WikiPageFactory;
 use MediaWiki\Revision\RevisionStore;
+use MediaWiki\Revision\SlotRecord;
 use MediaWiki\Title\Title;
 use MediaWiki\User\ActorNormalization;
 use MediaWiki\User\UserFactory;
@@ -94,7 +95,7 @@ class Cleanse extends Maintenance {
 	}
 
 	private function removeUser( UserIdentity $target, UserIdentity $admin ): void {
-		$db = $this->connectionProvider->getReplicaDatabase();
+		$db = $this->connectionProvider->getPrimaryDatabase();
 		$actorId = $this->actorNormalization->findActorId( $target, $db );
 
 		$res = $this->revisionStore->newSelectQueryBuilder( $db )
@@ -238,14 +239,17 @@ class Cleanse extends Maintenance {
 	 * @return array<int,array{user:User,log_id:int}>
 	 */
 	private function getNewUsersFromLog(): array {
-		$db = $this->connectionProvider->getReplicaDatabase();
+		$db = $this->connectionProvider->getPrimaryDatabase();
 
 		$qb = DatabaseLogEntry::newSelectQueryBuilder( $db )
 			->where( [
 				'log_type' => 'newusers',
+				'log_action' => [ 'create', 'create2' ],
+				'log_namespace' => NS_USER,
 			] )
 			->leftJoin( 'sapphirespamcleanse_trusted_user', 't', 't.trusted_user_id = user_id' )
-			->where( 't.trusted_user_id IS NULL' );
+			->andWhere( 't.trusted_user_id IS NULL' )
+			->andWhere( 'log_title = user_name' );
 
 		if ( $this->beforeLogId !== null ) {
 			$qb->andWhere( 'log_id < ' . $this->beforeLogId );
@@ -260,7 +264,13 @@ class Cleanse extends Maintenance {
 		$users = [];
 		foreach ( $res as $row ) {
 			$userId = (int)$row->user_id;
+			if ( $userId <= 0 ) {
+				continue;
+			}
 			$user = $this->userFactory->newFromId( $userId );
+			if ( !$user->isRegistered() ) {
+				continue;
+			}
 			$users[$userId] = [
 				'user' => $user,
 				'log_id' => (int)$row->log_id,
@@ -275,7 +285,7 @@ class Cleanse extends Maintenance {
 
 	/** @return WikiPage[] */
 	private function getAllPagesForUser( UserIdentity $user ): array {
-		$db = $this->connectionProvider->getReplicaDatabase();
+		$db = $this->connectionProvider->getPrimaryDatabase();
 		$actorId = $this->actorNormalization->findActorId( $user, $db );
 		if ( !$actorId ) {
 			return [];
@@ -295,7 +305,7 @@ class Cleanse extends Maintenance {
 		return $pages;
 	}
 
-	/** @return WikiPage[] */
+	/** @return array<int,array{page:WikiPage,rev_id:int,timestamp:string}> */
 	private function getRecentPagesForUser( UserIdentity $user, int $limit ): array {
 		$db = $this->connectionProvider->getReplicaDatabase();
 		$actorId = $this->actorNormalization->findActorId( $user, $db );
@@ -305,7 +315,7 @@ class Cleanse extends Maintenance {
 
 		$res = $db->select(
 			'recentchanges',
-			[ 'rc_namespace', 'rc_title' ],
+			[ 'rc_namespace', 'rc_title', 'rc_this_oldid', 'rc_timestamp' ],
 			[ 'rc_actor' => $actorId ],
 			__METHOD__,
 			[
@@ -314,32 +324,53 @@ class Cleanse extends Maintenance {
 			]
 		);
 
-		$pages = [];
+		$previews = [];
 		foreach ( $res as $row ) {
+			$revId = (int)$row->rc_this_oldid;
+			if ( $revId <= 0 ) {
+				continue;
+			}
 			$title = Title::makeTitle( (int)$row->rc_namespace, $row->rc_title );
 			$key = $title->getPrefixedDBkey();
-			if ( isset( $pages[$key] ) ) {
+			if ( isset( $previews[$key] ) ) {
 				continue;
 			}
 			$page = $this->wikiPageFactory->newFromTitle( $title );
 			if ( !$page->exists() ) {
 				continue;
 			}
-			$pages[$key] = $page;
-			if ( count( $pages ) >= $limit ) {
+			$previews[$key] = [
+				'page' => $page,
+				'rev_id' => $revId,
+				'timestamp' => (string)$row->rc_timestamp,
+			];
+			if ( count( $previews ) >= $limit ) {
 				break;
 			}
 		}
 
-		return array_values( $pages );
+		return array_values( $previews );
 	}
 
-	private function printPagePreview( string $userName, string $email, WikiPage $page ): void {
+	/**
+	 * @phpcs:ignore MediaWiki.Commenting.FunctionComment.ParamNameNoMatch
+	 * @param array{page:WikiPage,rev_id:int,timestamp:string} $preview
+	 */
+	private function printPagePreview( string $userName, string $email, array $preview ): void {
+		$page = $preview['page'];
+		$revId = $preview['rev_id'];
+		$timestamp = wfTimestamp( TS_ISO_8601, $preview['timestamp'] );
 		$pageName = $page->getTitle()->getPrefixedText();
-		echo "\033[1m$userName <$email> edited [[$pageName]]\033[0m\n";
+		echo "\033[1m$userName <$email> edited [[$pageName]] (rev $revId at $timestamp)\033[0m\n";
 
 		$text = '';
-		$content = $page->getContent();
+		$revision = $this->revisionStore->getRevisionById( $revId );
+		if ( !$revision ) {
+			echo "(Revision preview unavailable)\n";
+			return;
+		}
+
+		$content = $revision->getContent( SlotRecord::MAIN );
 		if ( $content && method_exists( $content, 'getNativeData' ) ) {
 			$text = (string)$content->getNativeData();
 		}
@@ -359,11 +390,11 @@ class Cleanse extends Maintenance {
 		// Strip ANSI CSI sequences: ESC [ ... final_byte
 		$text = preg_replace( '/\x1b\[[0-9;]*[A-Za-z]/', '', $text );
 		// Strip OSC sequences: ESC ] ... ST (BEL or ESC \)
-		$text = preg_replace( '/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)/', '', (string) $text );
+		$text = preg_replace( '/\x1b][^\x07\x1b]*(?:\x07|\x1b\\\\)/', '', (string)$text );
 		// Strip remaining ESC sequences
-		$text = preg_replace( '/\x1b[^\x1b]/', '', (string) $text );
+		$text = preg_replace( '/\x1b[^\x1b]/', '', (string)$text );
 		// Strip control characters except newline (\n) and tab (\t)
-		$text = preg_replace( '/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', (string) $text );
+		$text = preg_replace( '/[\x00-\x08\x0b-\x0d\x0e-\x1f\x7f]/', '', (string)$text );
 		return $text;
 	}
 
