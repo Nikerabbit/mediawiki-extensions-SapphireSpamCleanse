@@ -411,7 +411,7 @@ class Cleanse extends Maintenance {
 
 		$confirmation = false;
 		while ( true ) {
-			$response = trim( readline( '[p]urge (default) or [t]rust or [a]ll: ' ) );
+			$response = trim( readline( '[p]urge all (default) or [t]rust some or trust [a]ll: ' ) );
 			readline_add_history( $response );
 			switch ( $response ) {
 				case '':
