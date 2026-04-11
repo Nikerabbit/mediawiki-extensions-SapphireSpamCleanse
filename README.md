@@ -7,9 +7,8 @@ leaving no trace in logs, page histories, or change lists. This ensures a pristi
 
 For SapphireSpamCleanse, the following prerequisites are required:
 
-- PHP 8.1 or newer
-- MediaWiki 1.39 or newer
-- SmiteSpam extension
+- PHP 8.3 or newer
+- MediaWiki 1.43 or newer
 - UserMerge extension
 
 ## Installation
@@ -21,6 +20,40 @@ add `wfLoadExtension( 'SapphireSpamCleanse' )` into your `LocalSettings.php`.
 
 The usage of SapphireSpamCleanse is simple. For removing spam, simply press `enter`. In case a piece is not spam, you
 can type `t` or `trust`.
+
+Useful options for incremental processing:
+
+- `--max-users=<n>`: process at most `<n>` users in one run (default: `25`)
+- `--before-log-id=<id>`: process only users with `newusers` log IDs lower than `<id>`
+- `--pages-per-user=<n>`: preview at most `<n>` recent pages per user (default: `3`)
+
+Example incremental run:
+
+<pre>
+$ php /path/to/MediaWiki/maintenance/run.php SapphireSpamCleanse:cleanse --max-users=20
+...
+Next run cursor: --before-log-id 123456
+$ php /path/to/MediaWiki/maintenance/run.php SapphireSpamCleanse:cleanse --max-users=20 --before-log-id=123456
+</pre>
+
+## Migration from SmiteSpam trusted users
+
+SapphireSpamCleanse now stores trusted users in its own table `sapphirespamcleanse_trusted_user`.
+
+If you previously trusted users in SmiteSpam, copy them once after running `update.php`:
+
+<pre>
+INSERT INTO sapphirespamcleanse_trusted_user (
+  trusted_user_id,
+  trusted_user_timestamp,
+  trusted_user_admin_id
+)
+SELECT
+  trusted_user_id,
+  trusted_user_timestamp,
+  trusted_user_admin_id
+FROM smitespam_trusted_user;
+</pre>
 
 Example run:
 

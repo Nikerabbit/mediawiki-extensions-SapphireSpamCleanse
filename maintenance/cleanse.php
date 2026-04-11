@@ -4,25 +4,22 @@ namespace SapphireSpamCleanse;
 
 use Maintenance;
 use MediaWiki\Block\DatabaseBlockStore;
+use MediaWiki\Logging\DatabaseLogEntry;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Page\DeletePageFactory;
 use MediaWiki\Page\WikiPageFactory;
-use MediaWiki\Revision\RevisionLookup;
-use MediaWiki\Revision\RevisionRecord;
 use MediaWiki\Revision\RevisionStore;
+use MediaWiki\Revision\SlotRecord;
 use MediaWiki\Title\Title;
 use MediaWiki\User\ActorNormalization;
 use MediaWiki\User\UserFactory;
 use MediaWiki\User\UserIdentity;
 use MediaWiki\User\UserIdentityLookup;
 use MergeUser;
-use SmiteSpamAnalyzer;
 use User;
 use UserMergeLogger;
-use Wikimedia\Rdbms\ILoadBalancer;
+use Wikimedia\Rdbms\IConnectionProvider;
 use WikiPage;
-use const DB_PRIMARY;
-use const DB_REPLICA;
 
 $IP = getenv( 'MW_INSTALL_PATH' ) ?: __DIR__ . '/../../..';
 require_once "$IP/maintenance/Maintenance.php";
@@ -30,22 +27,31 @@ require_once "$IP/maintenance/Maintenance.php";
 class Cleanse extends Maintenance {
 	private ActorNormalization $actorNormalization;
 	private DeletePageFactory $deletePageFactory;
-	private ILoadBalancer $loadBalancer;
-	private RevisionLookup $revisionLookup;
+	private IConnectionProvider $connectionProvider;
 	private RevisionStore $revisionStore;
 	private UserFactory $userFactory;
 	private UserIdentityLookup $userIdentityLookup;
 	private WikiPageFactory $wikiPageFactory;
 	private DatabaseBlockStore $databaseBlockStore;
+	private int $maxUsers;
+	private int $pagesPerUser;
+	private ?int $beforeLogId = null;
 	private bool $simulate;
 
 	public function __construct() {
 		parent::__construct();
 
 		$this->requireExtension( 'UserMerge' );
-		$this->requireExtension( 'SmiteSpam' );
 
 		$this->addOption( 'remove-user', 'Remove named user' );
+		$this->addOption( 'max-users', 'Maximum number of users to process in one run', false, true );
+		$this->addOption(
+			'before-log-id',
+			'Only process accounts whose newusers log_id is lower than this value',
+			false,
+			true
+		);
+		$this->addOption( 'pages-per-user', 'Maximum number of recent pages to preview per user', false, true );
 		$this->addOption( 'simulate', 'Do not execute any actions' );
 	}
 
@@ -53,8 +59,7 @@ class Cleanse extends Maintenance {
 		$services = MediaWikiServices::getInstance();
 		$this->actorNormalization = $services->getActorNormalization();
 		$this->deletePageFactory = $services->getDeletePageFactory();
-		$this->loadBalancer = $services->getDBLoadBalancer();
-		$this->revisionLookup = $services->getRevisionLookup();
+		$this->connectionProvider = $services->getConnectionProvider();
 		$this->revisionStore = $services->getRevisionStore();
 		$this->userFactory = $services->getUserFactory();
 		$this->userIdentityLookup = $services->getUserIdentityLookup();
@@ -66,6 +71,11 @@ class Cleanse extends Maintenance {
 		$this->initializeServices();
 
 		$admin = $this->userIdentityLookup->getUserIdentityByUserId( 1 );
+		$this->maxUsers = max( 1, (int)$this->getOption( 'max-users', 25 ) );
+		$this->pagesPerUser = max( 1, (int)$this->getOption( 'pages-per-user', 3 ) );
+		$this->beforeLogId = $this->hasOption( 'before-log-id' )
+			? max( 1, (int)$this->getOption( 'before-log-id' ) )
+			: null;
 		$this->simulate = $this->hasOption( 'simulate' );
 
 		if ( $this->hasOption( 'remove-user' ) ) {
@@ -85,25 +95,17 @@ class Cleanse extends Maintenance {
 	}
 
 	private function removeUser( UserIdentity $target, UserIdentity $admin ): void {
-		$db = $this->loadBalancer->getConnection( DB_REPLICA );
+		$db = $this->connectionProvider->getPrimaryDatabase();
 		$actorId = $this->actorNormalization->findActorId( $target, $db );
 
-		if ( method_exists( $this->revisionStore, 'newSelectQueryBuilder' ) ) {
-			$res = $this->revisionStore->newSelectQueryBuilder( $db )
-				->where( [ 'rev_actor' => $actorId ] )
-				->groupBy( 'rev_page' )
-				->caller( __METHOD__ )
-				->fetchResultSet();
-		} else {
-			$queryInfo = $this->revisionStore->getQueryInfo();
-			$res = $db->newSelectQueryBuilder()
-				->fields( $queryInfo['fields'] )
-				->tables( $queryInfo['tables'] )
-				->where( [ 'rev_actor' => $actorId ] )
-				->groupBy( 'rev_page' )
-				->caller( __METHOD__ )
-				->fetchResultSet();
-		}
+		$res = $this->revisionStore->newSelectQueryBuilder( $db )
+			->where( [
+				'rev_actor' => $actorId,
+				'rev_parent_id' => 0,
+			] )
+			->groupBy( 'rev_page' )
+			->caller( __METHOD__ )
+			->fetchResultSet();
 
 		$pages = [];
 		echo "Found these pages by the user {$target->getName()}:\n";
@@ -143,7 +145,7 @@ class Cleanse extends Maintenance {
 	}
 
 	private function cleanupRecentChanges( UserIdentity $user, ?string $ts = null ): void {
-		$dbw = $this->loadBalancer->getConnection( DB_PRIMARY );
+		$dbw = $this->connectionProvider->getPrimaryDatabase();
 		$conds = [];
 		$conds['rc_actor'] = $this->actorNormalization->findActorId( $user, $dbw );
 		if ( $ts ) {
@@ -175,7 +177,7 @@ class Cleanse extends Maintenance {
 	}
 
 	private function cleanupLogs( UserIdentity $user ): void {
-		$dbw = $this->loadBalancer->getConnection( DB_PRIMARY );
+		$dbw = $this->connectionProvider->getPrimaryDatabase();
 		$conds = [];
 		$conds['log_actor'] = $this->actorNormalization->findActorId( $user, $dbw );
 
@@ -185,37 +187,29 @@ class Cleanse extends Maintenance {
 	}
 
 	private function cleanseSpam( UserIdentity $admin ): void {
-		$ss = new SmiteSpamAnalyzer( false );
-		$spamPages = $ss->run( 0, 500 );
+		$candidates = $this->getNewUsersFromLog();
+		$count = count( $candidates );
+		echo "Found $count new users to review\n";
 
-		$byUser = [];
+		$smallestSeenLogId = null;
+		foreach ( $candidates as $candidate ) {
+			$user = $candidate['user'];
+			$previewPages = $this->getRecentPagesForUser( $user, $this->pagesPerUser );
+			$userName = $user->getName();
+			$email = $user->getEmail();
+			$logId = $candidate['log_id'];
 
-		foreach ( $spamPages as $page ) {
-			$userId =
-				$this->revisionLookup->getFirstRevision( $page->getTitle() )
-					->getUser( RevisionRecord::RAW )->getId();
-			if ( $userId === 0 ) {
+			if ( $previewPages === [] ) {
 				continue;
 			}
 
-			$byUser[$userId][] = $page;
-		}
+			$smallestSeenLogId = $smallestSeenLogId === null ? $logId : min( $smallestSeenLogId, $logId );
 
-		$count = count( $byUser );
-		echo "Found $count spammy users to review\n";
+			echo "\e[1m$userName <$email>\e[0m\n";
+			echo "newusers log_id: $logId\n";
 
-		foreach ( $byUser as $userId => $pages ) {
-			$user = $this->userFactory->newFromId( $userId );
-			$userName = $user->getName();
-			$email = $user->getEmail();
-
-			foreach ( $pages as $page ) {
-				$pageName = $page->getTitle()->getPrefixedText();
-				echo "\e[1m$userName <$email> created [[$pageName]]\e[0m\n";
-				$text = $page->getContent()->getNativeData();
-				$text = mb_substr( (string)$text, 0, 500 );
-				$text = wordwrap( $text, 120, "\n", true );
-				echo $text . "\n";
+			foreach ( $previewPages as $page ) {
+				$this->printPagePreview( $userName, $email, $page );
 			}
 
 			while ( true ) {
@@ -225,7 +219,7 @@ class Cleanse extends Maintenance {
 					case '':
 					case 'p':
 					case 'purge':
-						$this->deletePages( $pages, $admin );
+						$this->deletePages( $this->getAllPagesForUser( $user ), $admin );
 						$this->deleteUser( $user, $admin );
 						echo "\n";
 						break 2;
@@ -239,13 +233,183 @@ class Cleanse extends Maintenance {
 				}
 			}
 		}
+
+		if ( $smallestSeenLogId !== null ) {
+			echo "Next run cursor: --before-log-id $smallestSeenLogId\n";
+		}
+	}
+
+	/**
+	 * @return array<int,array{user:User,log_id:int}>
+	 */
+	private function getNewUsersFromLog(): array {
+		$db = $this->connectionProvider->getPrimaryDatabase();
+
+		$qb = DatabaseLogEntry::newSelectQueryBuilder( $db )
+			->where( [
+				'log_type' => 'newusers',
+				'log_action' => 'create',
+				'log_namespace' => NS_USER,
+			] )
+			->leftJoin( 'sapphirespamcleanse_trusted_user', 't', 't.trusted_user_id = user_id' )
+			->andWhere( 't.trusted_user_id IS NULL' )
+			->andWhere( 'log_title = user_name' );
+
+		if ( $this->beforeLogId !== null ) {
+			$qb->andWhere( 'log_id < ' . $this->beforeLogId );
+		}
+
+		$res = $qb
+			->orderBy( 'log_id', 'DESC' )
+			->limit( $this->maxUsers * 5 )
+			->caller( __METHOD__ )
+			->fetchResultSet();
+
+		$users = [];
+		foreach ( $res as $row ) {
+			$userId = (int)$row->user_id;
+			if ( $userId <= 0 ) {
+				continue;
+			}
+			$user = $this->userFactory->newFromId( $userId );
+			if ( !$user->isRegistered() ) {
+				continue;
+			}
+			$users[$userId] = [
+				'user' => $user,
+				'log_id' => (int)$row->log_id,
+			];
+			if ( count( $users ) >= $this->maxUsers ) {
+				break;
+			}
+		}
+
+		return array_values( $users );
+	}
+
+	/** @return WikiPage[] */
+	private function getAllPagesForUser( UserIdentity $user ): array {
+		$db = $this->connectionProvider->getPrimaryDatabase();
+		$actorId = $this->actorNormalization->findActorId( $user, $db );
+		if ( !$actorId ) {
+			return [];
+		}
+
+		$res = $this->revisionStore->newSelectQueryBuilder( $db )
+			->where( [
+				'rev_actor' => $actorId,
+				'rev_parent_id' => 0,
+			] )
+			->groupBy( 'rev_page' )
+			->caller( __METHOD__ )
+			->fetchResultSet();
+
+		$pages = [];
+		foreach ( $res as $row ) {
+			$pages[] = $this->wikiPageFactory->newFromID( $row->rev_page );
+		}
+
+		return $pages;
+	}
+
+	/** @return array<int,array{page:WikiPage,rev_id:int,timestamp:string}> */
+	private function getRecentPagesForUser( UserIdentity $user, int $limit ): array {
+		$db = $this->connectionProvider->getReplicaDatabase();
+		$actorId = $this->actorNormalization->findActorId( $user, $db );
+		if ( !$actorId ) {
+			return [];
+		}
+
+		$res = $db->select(
+			'recentchanges',
+			[ 'rc_namespace', 'rc_title', 'rc_this_oldid', 'rc_timestamp' ],
+			[ 'rc_actor' => $actorId ],
+			__METHOD__,
+			[
+				'ORDER BY' => 'rc_timestamp DESC',
+				'LIMIT' => $limit * 4,
+			]
+		);
+
+		$previews = [];
+		foreach ( $res as $row ) {
+			$revId = (int)$row->rc_this_oldid;
+			if ( $revId <= 0 ) {
+				continue;
+			}
+			$title = Title::makeTitle( (int)$row->rc_namespace, $row->rc_title );
+			$key = $title->getPrefixedDBkey();
+			if ( isset( $previews[$key] ) ) {
+				continue;
+			}
+			$page = $this->wikiPageFactory->newFromTitle( $title );
+			if ( !$page->exists() ) {
+				continue;
+			}
+			$previews[$key] = [
+				'page' => $page,
+				'rev_id' => $revId,
+				'timestamp' => (string)$row->rc_timestamp,
+			];
+			if ( count( $previews ) >= $limit ) {
+				break;
+			}
+		}
+
+		return array_values( $previews );
+	}
+
+	/**
+	 * @phpcs:ignore MediaWiki.Commenting.FunctionComment.ParamNameNoMatch
+	 * @param array{page:WikiPage,rev_id:int,timestamp:string} $preview
+	 */
+	private function printPagePreview( string $userName, string $email, array $preview ): void {
+		$page = $preview['page'];
+		$revId = $preview['rev_id'];
+		$timestamp = wfTimestamp( TS_ISO_8601, $preview['timestamp'] );
+		$pageName = $page->getTitle()->getPrefixedText();
+		echo "\033[1m$userName <$email> edited [[$pageName]] (rev $revId at $timestamp)\033[0m\n";
+
+		$text = '';
+		$revision = $this->revisionStore->getRevisionById( $revId );
+		if ( !$revision ) {
+			echo "(Revision preview unavailable)\n";
+			return;
+		}
+
+		$content = $revision->getContent( SlotRecord::MAIN );
+		if ( $content && method_exists( $content, 'getNativeData' ) ) {
+			$text = (string)$content->getNativeData();
+		}
+
+		if ( $text === '' ) {
+			echo "(No text preview available)\n";
+			return;
+		}
+
+		$text = $this->sanitizeTerminalOutput( $text );
+		$text = mb_substr( $text, 0, 500 );
+		$text = wordwrap( $text, 120, "\n", true );
+		echo $text . "\n";
+	}
+
+	private function sanitizeTerminalOutput( string $text ): string {
+		// Strip ANSI CSI sequences: ESC [ ... final_byte
+		$text = preg_replace( '/\x1b\[[0-9;]*[A-Za-z]/', '', $text );
+		// Strip OSC sequences: ESC ] ... ST (BEL or ESC \)
+		$text = preg_replace( '/\x1b][^\x07\x1b]*(?:\x07|\x1b\\\\)/', '', (string)$text );
+		// Strip remaining ESC sequences
+		$text = preg_replace( '/\x1b[^\x1b]/', '', (string)$text );
+		// Strip control characters except newline (\n) and tab (\t)
+		$text = preg_replace( '/[\x00-\x08\x0b-\x0d\x0e-\x1f\x7f]/', '', (string)$text );
+		return $text;
 	}
 
 	private function trustUser( UserIdentity $user, UserIdentity $admin ): void {
-		$dbw = $this->loadBalancer->getConnection( DB_PRIMARY );
+		$dbw = $this->connectionProvider->getPrimaryDatabase();
 		if ( !$this->simulate ) {
 			$dbw->insert(
-				'smitespam_trusted_user', [
+				'sapphirespamcleanse_trusted_user', [
 					'trusted_user_id' => $user->getId(),
 					'trusted_user_timestamp' => $dbw->timestamp(),
 					'trusted_user_admin_id' => $admin->getId(),
@@ -255,16 +419,22 @@ class Cleanse extends Maintenance {
 	}
 
 	private function cleanUsers( UserIdentity $admin ): void {
-		$db = $this->loadBalancer->getConnection( DB_REPLICA );
+		$db = $this->connectionProvider->getPrimaryDatabase();
 
-		$table = 'user';
-		$fields = [ '*' ];
-		$conds = [];
-		$conds['user_editcount'] = 0;
-		$options = [ 'ORDER BY' => 'user_name ASC' ];
+		$res = $db->newSelectQueryBuilder()
+			->from( 'user', 'u' )
+			->leftJoin( 'sapphirespamcleanse_trusted_user', 't', 't.trusted_user_id = u.user_id' )
+			->select( 'u.*' )
+			->where( [
+				'u.user_editcount' => 0,
+				't.trusted_user_id' => null,
+			] )
+			->orderBy( 'u.user_name', 'ASC' )
+			->limit( $this->maxUsers )
+			->caller( __METHOD__ )
+			->fetchResultSet();
 
 		$users = [];
-		$res = $db->select( $table, $fields, $conds, __METHOD__, $options );
 		foreach ( $res as $row ) {
 			$users[] = User::newFromRow( $row );
 		}
@@ -279,7 +449,7 @@ class Cleanse extends Maintenance {
 
 		$confirmation = false;
 		while ( true ) {
-			$response = trim( readline( '[p]urge (default) or [t]rust or [a]ll: ' ) );
+			$response = trim( readline( '[p]urge all (default) or [t]rust some or trust [a]ll: ' ) );
 			readline_add_history( $response );
 			switch ( $response ) {
 				case '':
@@ -303,6 +473,7 @@ class Cleanse extends Maintenance {
 							$this->trustUser( $users[$response], $admin );
 							$userName = $users[$response]->getName();
 							echo "Trusted user $userName\n";
+							unset( $users[$response] );
 						}
 					}
 
@@ -340,20 +511,6 @@ class Cleanse extends Maintenance {
 	 * @return User[]
 	 */
 	private function updateUserList( array $users ): array {
-		$trustedUserIds = [];
-		$db = $this->loadBalancer->getConnection( DB_REPLICA );
-		$res = $db->select( 'smitespam_trusted_user', 'trusted_user_id', [], __METHOD__ );
-		foreach ( $res as $row ) {
-			$trustedUserIds[] = $row->trusted_user_id;
-		}
-
-		$trustedMap = array_flip( $trustedUserIds );
-		foreach ( $users as $key => $user ) {
-			if ( isset( $trustedMap[$user->getId()] ) ) {
-				unset( $users[$key] );
-			}
-		}
-
 		$userMap = [];
 		foreach ( $users as $user ) {
 			$sortKey = strrev( (string)$user->getEmail() ) . $user->getName();
