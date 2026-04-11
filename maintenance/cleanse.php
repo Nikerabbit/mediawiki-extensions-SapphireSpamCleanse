@@ -363,11 +363,11 @@ class Cleanse extends Maintenance {
 		// Strip ANSI CSI sequences: ESC [ ... final_byte
 		$text = preg_replace( '/\x1b\[[0-9;]*[A-Za-z]/', '', $text );
 		// Strip OSC sequences: ESC ] ... ST (BEL or ESC \)
-		$text = preg_replace( '/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)/', '', $text );
+		$text = preg_replace( '/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)/', '', (string) $text );
 		// Strip remaining ESC sequences
-		$text = preg_replace( '/\x1b[^\x1b]/', '', $text );
+		$text = preg_replace( '/\x1b[^\x1b]/', '', (string) $text );
 		// Strip control characters except newline (\n) and tab (\t)
-		$text = preg_replace( '/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', $text );
+		$text = preg_replace( '/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', (string) $text );
 		return $text;
 	}
 
