@@ -241,6 +241,14 @@ class Cleanse extends Maintenance {
 			}
 		}
 
+		if ( $smallestSeenLogId === null ) {
+			if ( $candidates !== [] ) {
+				$smallestSeenLogId = min( array_column( $candidates, 'log_id' ) );
+			} elseif ( $this->beforeLogId !== null ) {
+				$smallestSeenLogId = $this->beforeLogId;
+			}
+		}
+
 		if ( $smallestSeenLogId !== null ) {
 			echo "Next run cursor: --before-log-id $smallestSeenLogId\n";
 		}
