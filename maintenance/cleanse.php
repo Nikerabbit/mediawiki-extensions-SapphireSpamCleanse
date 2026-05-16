@@ -188,20 +188,27 @@ class Cleanse extends Maintenance {
 
 	private function cleanseSpam( UserIdentity $admin ): void {
 		$candidates = $this->getNewUsersFromLog();
-		$count = count( $candidates );
-		echo "Found $count new users to review\n";
-
-		$smallestSeenLogId = null;
+		$reviewCandidates = [];
 		foreach ( $candidates as $candidate ) {
-			$user = $candidate['user'];
-			$previewPages = $this->getRecentPagesForUser( $user, $this->pagesPerUser );
-			$userName = $user->getName();
-			$email = $user->getEmail();
-			$logId = $candidate['log_id'];
-
+			$previewPages = $this->getRecentPagesForUser( $candidate['user'], $this->pagesPerUser );
 			if ( $previewPages === [] ) {
 				continue;
 			}
+
+			$candidate['preview_pages'] = $previewPages;
+			$reviewCandidates[] = $candidate;
+		}
+
+		$count = count( $reviewCandidates );
+		echo "Found $count new users to review\n";
+
+		$smallestSeenLogId = null;
+		foreach ( $reviewCandidates as $candidate ) {
+			$user = $candidate['user'];
+			$previewPages = $candidate['preview_pages'];
+			$userName = $user->getName();
+			$email = $user->getEmail();
+			$logId = $candidate['log_id'];
 
 			$smallestSeenLogId = $smallestSeenLogId === null ? $logId : min( $smallestSeenLogId, $logId );
 
@@ -231,6 +238,14 @@ class Cleanse extends Maintenance {
 					default:
 						break;
 				}
+			}
+		}
+
+		if ( $smallestSeenLogId === null ) {
+			if ( $candidates !== [] ) {
+				$smallestSeenLogId = min( array_column( $candidates, 'log_id' ) );
+			} elseif ( $this->beforeLogId !== null ) {
+				$smallestSeenLogId = $this->beforeLogId;
 			}
 		}
 
