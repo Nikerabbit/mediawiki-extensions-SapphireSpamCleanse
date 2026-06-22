@@ -22,7 +22,7 @@ jobs:
           - 8.5
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Setup PHP
       id: setup-php
@@ -47,7 +47,7 @@ jobs:
   rector:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Setup PHP
       uses: shivammathur/setup-php@v2
