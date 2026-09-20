@@ -43,7 +43,7 @@ class Cleanse extends Maintenance {
 
 		$this->requireExtension( 'UserMerge' );
 
-		$this->addOption( 'remove-user', 'Remove named user' );
+		$this->addOption( 'remove-user', 'Remove named user', false, true );
 		$this->addOption( 'max-users', 'Maximum number of users to process in one run', false, true );
 		$this->addOption(
 			'before-log-id',
