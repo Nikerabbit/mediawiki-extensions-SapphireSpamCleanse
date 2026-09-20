@@ -536,6 +536,7 @@ class Cleanse extends Maintenance {
 		return array_values( $userMap );
 	}
 
+	/** @param \User[] $users */
 	private function printNewAccountList( array $users ): void {
 		ksort( $users );
 
