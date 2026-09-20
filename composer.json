@@ -1,6 +1,8 @@
 {
-	"name": "mediawiki/sappshire-spam-cleanse",
+	"name": "mediawiki/sapphire-spam-cleanse",
+	"description": "MediaWiki extension for interactively removing spam users and their content",
 	"type": "mediawiki-extension",
+	"license": "GPL-2.0-or-later",
 	"homepage": "https://github.com/Nikerabbit/mediawiki-extensions-SapphireSpamCleanse",
 	"authors": [
 		{
@@ -18,7 +20,7 @@
 	},
 	"require": {
 		"php": ">=8.3",
-		"composer/installers": ">=1.0.1",
+		"composer/installers": "^1.0.1 || ^2.0",
 		"ext-readline": "*"
 	},
 	"require-dev": {

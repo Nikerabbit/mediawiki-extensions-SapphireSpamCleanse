@@ -41,8 +41,14 @@ jobs:
         key: ${{ runner.os }}-php8.4-composer-${{ hashFiles('**/composer.lock') }}
         restore-keys: ${{ runner.os }}-php8.4-composer-
 
+    - name: Validate Composer configuration
+      run: composer validate --strict
+
     - name: Install dependencies
       run: composer install --prefer-dist --no-progress
+
+    - name: Check platform requirements
+      run: composer check-platform-reqs
 
     - name: Run test suite
       run: composer run-script test
