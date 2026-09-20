@@ -10,42 +10,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-
+  quality:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        php_version:
-          - 8.3
-          - 8.4
-          - 8.5
+    timeout-minutes: 10
 
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Setup PHP
-      id: setup-php
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: ${{ matrix.php_version }}
-
-    - name: Cache vendor
-      id: composer-cache
-      uses: actions/cache@v6
-      with:
-        path: vendor
-        key: ${{ runner.os }}-build-php${{ matrix.php_version }}-${{ hashFiles('**/composer.lock') }}
-        restore-keys: ${{ runner.os }}-build-php${{ matrix.php_version }}-
-
-    - name: Install dependencies
-      run: composer install --prefer-dist --no-progress
-
-    - name: Run test suite
-      run: composer run-script test
-
-  rector:
-    runs-on: ubuntu-26.04
     steps:
     - uses: actions/checkout@v7
 
@@ -53,17 +26,26 @@ jobs:
       uses: shivammathur/setup-php@v2
       with:
         php-version: 8.4
+        coverage: none
+      env:
+        fail-fast: true
 
-    - name: Cache vendor
-      id: composer-cache
+    - name: Get Composer cache directory
+      id: composer-cache-dir
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer downloads
       uses: actions/cache@v6
       with:
-        path: vendor
-        key: ${{ runner.os }}-rector-php8.4-${{ hashFiles('**/composer.lock') }}
-        restore-keys: ${{ runner.os }}-rector-php8.4-
+        path: ${{ steps.composer-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-php8.4-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: ${{ runner.os }}-php8.4-composer-
 
     - name: Install dependencies
       run: composer install --prefer-dist --no-progress
+
+    - name: Run test suite
+      run: composer run-script test
 
     - name: Run rector
       run: composer run-script rector -- --dry-run
