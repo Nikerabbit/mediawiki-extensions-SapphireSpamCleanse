@@ -48,4 +48,4 @@ jobs:
       run: composer run-script test
 
     - name: Run rector
-      run: composer run-script rector -- --dry-run
+      run: composer run-script rector -- --dry-run --no-progress-bar --output-format=github
