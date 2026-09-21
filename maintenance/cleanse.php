@@ -2,9 +2,10 @@
 
 namespace SapphireSpamCleanse;
 
+use DatabaseLogEntry;
 use Maintenance;
 use MediaWiki\Block\DatabaseBlockStore;
-use MediaWiki\Logging\DatabaseLogEntry;
+use MediaWiki\Content\TextContent;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Page\DeletePageFactory;
 use MediaWiki\Page\WikiPageFactory;
@@ -399,9 +400,7 @@ class Cleanse extends Maintenance {
 		}
 
 		$content = $revision->getContent( SlotRecord::MAIN );
-		if ( $content && method_exists( $content, 'getNativeData' ) ) {
-			$text = (string)$content->getNativeData();
-		}
+		$text = $content instanceof TextContent ? $content->getText() : '';
 
 		if ( $text === '' ) {
 			echo "(No text preview available)\n";
