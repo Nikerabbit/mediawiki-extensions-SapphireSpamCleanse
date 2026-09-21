@@ -71,6 +71,9 @@ class Cleanse extends Maintenance {
 		$this->initializeServices();
 
 		$admin = $this->userIdentityLookup->getUserIdentityByUserId( 1 );
+		if ( $admin === null ) {
+			$this->fatalError( 'Administrator account with user ID 1 does not exist' );
+		}
 		$this->maxUsers = max( 1, (int)$this->getOption( 'max-users', 25 ) );
 		$this->pagesPerUser = max( 1, (int)$this->getOption( 'pages-per-user', 3 ) );
 		$this->beforeLogId = $this->hasOption( 'before-log-id' )
@@ -219,7 +222,8 @@ class Cleanse extends Maintenance {
 				$this->printPagePreview( $userName, $email, $page );
 			}
 
-			while ( true ) {
+			$reviewed = false;
+			while ( !$reviewed ) {
 				$response = trim( readline( '[p]urge (default) or [t]rust: ' ) );
 				readline_add_history( $response );
 				switch ( $response ) {
@@ -229,12 +233,14 @@ class Cleanse extends Maintenance {
 						$this->deletePages( $this->getAllPagesForUser( $user ), $admin );
 						$this->deleteUser( $user, $admin );
 						echo "\n";
-						break 2;
+						$reviewed = true;
+						break;
 					case 't':
 					case 'trust':
 						$this->trustUser( $user, $admin );
 						echo "\n";
-						break 2;
+						$reviewed = true;
+						break;
 					default:
 						break;
 				}
@@ -428,7 +434,8 @@ class Cleanse extends Maintenance {
 					'trusted_user_id' => $user->getId(),
 					'trusted_user_timestamp' => $dbw->timestamp(),
 					'trusted_user_admin_id' => $admin->getId(),
-				]
+				],
+				__METHOD__
 			);
 		}
 	}
@@ -463,7 +470,8 @@ class Cleanse extends Maintenance {
 		$this->printNewAccountList( $users );
 
 		$confirmation = false;
-		while ( true ) {
+		$actionSelected = false;
+		while ( !$actionSelected ) {
 			$response = trim( readline( '[p]urge all (default) or [t]rust some or trust [a]ll: ' ) );
 			readline_add_history( $response );
 			switch ( $response ) {
@@ -471,8 +479,9 @@ class Cleanse extends Maintenance {
 				case 'p':
 				case 'purge':
 					$confirmation = true;
+					$actionSelected = true;
 					echo "\n";
-					break 2;
+					break;
 				case 't':
 				case 'trust':
 					while ( true ) {
@@ -503,7 +512,8 @@ class Cleanse extends Maintenance {
 						echo "Trusted user $userName\n";
 					}
 					$users = [];
-					break 2;
+					$actionSelected = true;
+					break;
 				default:
 					break;
 			}
@@ -528,7 +538,7 @@ class Cleanse extends Maintenance {
 	private function updateUserList( array $users ): array {
 		$userMap = [];
 		foreach ( $users as $user ) {
-			$sortKey = strrev( (string)$user->getEmail() ) . $user->getName();
+			$sortKey = strrev( $user->getEmail() ) . $user->getName();
 			$userMap[$sortKey] = $user;
 		}
 
