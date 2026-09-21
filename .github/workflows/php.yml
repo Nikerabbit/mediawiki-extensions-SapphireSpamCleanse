@@ -109,6 +109,19 @@ jobs:
       env:
         fail-fast: true
 
+    - name: Get Composer cache directory
+      id: composer-cache-dir
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer downloads
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.composer-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-php${{ matrix.php }}-mw${{ matrix.mediawiki }}-composer-${{ hashFiles('mediawiki/composer.lock', 'mediawiki/extensions/SapphireSpamCleanse/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-php${{ matrix.php }}-composer-
+          ${{ runner.os }}-composer-
+
     - name: Install MediaWiki dependencies
       run: composer install --working-dir mediawiki --prefer-dist --no-dev --no-progress
 
@@ -144,6 +157,19 @@ jobs:
         coverage: none
       env:
         fail-fast: true
+
+    - name: Get Composer cache directory
+      id: composer-cache-dir
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer downloads
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.composer-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-php8.4-mw-master-schema-composer-${{ hashFiles('mediawiki/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-php8.4-composer-
+          ${{ runner.os }}-composer-
 
     - name: Install MediaWiki dependencies
       run: composer install --working-dir mediawiki --prefer-dist --no-progress
