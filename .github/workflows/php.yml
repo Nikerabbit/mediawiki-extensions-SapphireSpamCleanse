@@ -21,6 +21,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        persist-credentials: false
 
     - name: Setup PHP
       uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -55,3 +57,130 @@ jobs:
 
     - name: Run rector
       run: composer run-script rector -- --dry-run --no-progress-bar
+
+  mediawiki:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - mediawiki: REL1_43
+          php: '8.3'
+        - mediawiki: REL1_44
+          php: '8.3'
+        - mediawiki: REL1_45
+          php: '8.3'
+        - mediawiki: REL1_46
+          php: '8.3'
+        - mediawiki: master
+          php: '8.4'
+
+    name: MediaWiki ${{ matrix.mediawiki }}
+
+    steps:
+    - name: Check out MediaWiki
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        repository: wikimedia/mediawiki
+        ref: ${{ matrix.mediawiki }}
+        path: mediawiki
+        persist-credentials: false
+
+    - name: Check out SapphireSpamCleanse
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        path: mediawiki/extensions/SapphireSpamCleanse
+        persist-credentials: false
+
+    - name: Check out UserMerge
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        repository: wikimedia/mediawiki-extensions-UserMerge
+        ref: ${{ matrix.mediawiki }}
+        path: mediawiki/extensions/UserMerge
+        persist-credentials: false
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+      with:
+        php-version: ${{ matrix.php }}
+        coverage: none
+      env:
+        fail-fast: true
+
+    - name: Get Composer cache directory
+      id: composer-cache-dir
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer downloads
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.composer-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-php${{ matrix.php }}-mw${{ matrix.mediawiki }}-composer-${{ hashFiles('mediawiki/composer.lock', 'mediawiki/extensions/SapphireSpamCleanse/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-php${{ matrix.php }}-composer-
+          ${{ runner.os }}-composer-
+
+    - name: Install MediaWiki dependencies
+      run: composer install --working-dir mediawiki --prefer-dist --no-dev --no-progress
+
+    - name: Install extension dependencies
+      run: composer install --working-dir mediawiki/extensions/SapphireSpamCleanse --prefer-dist --no-progress
+
+    - name: Run Phan and taint analysis
+      run: composer --working-dir mediawiki/extensions/SapphireSpamCleanse phan
+
+  schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Check out MediaWiki
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        repository: wikimedia/mediawiki
+        ref: master
+        path: mediawiki
+        persist-credentials: false
+
+    - name: Check out SapphireSpamCleanse
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        path: mediawiki/extensions/SapphireSpamCleanse
+        persist-credentials: false
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+      with:
+        php-version: 8.4
+        coverage: none
+      env:
+        fail-fast: true
+
+    - name: Get Composer cache directory
+      id: composer-cache-dir
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer downloads
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.composer-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-php8.4-mw-master-schema-composer-${{ hashFiles('mediawiki/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-php8.4-composer-
+          ${{ runner.os }}-composer-
+
+    - name: Install MediaWiki dependencies
+      run: composer install --working-dir mediawiki --prefer-dist --no-progress
+
+    - name: Regenerate SQL schemas
+      run: >-
+        php mediawiki/maintenance/generateSchemaSql.php
+        --json mediawiki/extensions/SapphireSpamCleanse/sql/tables.json
+        --sql mediawiki/extensions/SapphireSpamCleanse/sql
+        --type all
+
+    - name: Check generated SQL is current
+      run: git diff --exit-code
+      working-directory: mediawiki/extensions/SapphireSpamCleanse

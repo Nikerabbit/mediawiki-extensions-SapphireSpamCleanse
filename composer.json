@@ -13,6 +13,9 @@
 	],
 	"config": {
 		"optimize-autoloader": true,
+		"platform": {
+			"php": "8.3.0"
+		},
 		"allow-plugins": {
 			"composer/installers": true,
 			"dealerdirect/phpcodesniffer-composer-installer": true
@@ -25,15 +28,22 @@
 	},
 	"require-dev": {
 		"mediawiki/mediawiki-codesniffer": "v52.0.1",
+		"mediawiki/mediawiki-phan-config": "0.20.0",
+		"mediawiki/minus-x": "2.0.1",
 		"php-parallel-lint/php-parallel-lint": "v1.4.0",
 		"rector/rector": "^2.1"
 	},
 	"scripts": {
-		"fix": "phpcbf",
+		"fix": [
+			"minus-x fix .",
+			"phpcbf"
+		],
 		"test": [
 			"parallel-lint . --exclude vendor",
-			"phpcs -p -s"
+			"phpcs -p -s",
+			"minus-x check ."
 		],
+		"phan": "phan -d . --long-progress-bar",
 		"rector": "rector"
 	}
 }
