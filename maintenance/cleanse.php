@@ -75,6 +75,7 @@ class Cleanse extends Maintenance {
 		if ( $admin === null ) {
 			$this->fatalError( 'Administrator account with user ID 1 does not exist' );
 		}
+
 		$this->maxUsers = max( 1, (int)$this->getOption( 'max-users', 25 ) );
 		$this->pagesPerUser = max( 1, (int)$this->getOption( 'pages-per-user', 3 ) );
 		$this->beforeLogId = $this->hasOption( 'before-log-id' )
@@ -90,6 +91,7 @@ class Cleanse extends Maintenance {
 			if ( $target === null || !$target->isRegistered() ) {
 				$this->fatalError( 'Given user account does not exist' );
 			}
+
 			$this->removeUser( $target, $admin );
 			return;
 		}
@@ -293,10 +295,12 @@ class Cleanse extends Maintenance {
 			if ( $userId <= 0 ) {
 				continue;
 			}
+
 			$user = $this->userFactory->newFromId( $userId );
 			if ( !$user->isRegistered() ) {
 				continue;
 			}
+
 			$users[$userId] = [
 				'user' => $user,
 				'log_id' => (int)$row->log_id,
@@ -359,15 +363,18 @@ class Cleanse extends Maintenance {
 			if ( $revId <= 0 ) {
 				continue;
 			}
+
 			$title = Title::makeTitle( (int)$row->rc_namespace, $row->rc_title );
 			$key = $title->getPrefixedDBkey();
 			if ( isset( $previews[$key] ) ) {
 				continue;
 			}
+
 			$page = $this->wikiPageFactory->newFromTitle( $title );
 			if ( !$page->exists() ) {
 				continue;
 			}
+
 			$previews[$key] = [
 				'page' => $page,
 				'rev_id' => $revId,
@@ -510,6 +517,7 @@ class Cleanse extends Maintenance {
 						$userName = $user->getName();
 						echo "Trusted user $userName\n";
 					}
+
 					$users = [];
 					$actionSelected = true;
 					break;
